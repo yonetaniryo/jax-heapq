@@ -14,8 +14,9 @@ import jax.numpy as jnp
 from chex import Array, Scalar
 
 
-def _siftup(heap: Array, pos: int) -> Array:
-    endpos = len(heap)
+@jax.jit
+def _siftup(heap: Array, pos: int, endpos: int) -> Array:
+    # endpos = len(heap)
     startpos = pos
     newitem = heap[pos]
     childpos = 2 * pos + 1
@@ -50,6 +51,7 @@ def _siftup(heap: Array, pos: int) -> Array:
     return heap
 
 
+@jax.jit
 def _siftdown(heap: Array, startpos: int, pos: int) -> Array:
     newitem = heap[pos]
 
@@ -80,28 +82,58 @@ def _siftdown(heap: Array, startpos: int, pos: int) -> Array:
     return heap
 
 
-@jax.jit
-def heapify(heap: Array) -> Array:
-    n = len(heap)
+def heapify_fixedsize(data: Array) -> Array:
+    size = len(data)
+    return _heapify(data, size)
 
+
+def heapify(data: Array, max_size: int = 1024) -> Array:
+    size = len(data)
+    assert size <= max_size, "max_size should be greater than or equal to len(data)"
+    data_extended = jnp.hstack((data, jnp.ones(max_size - size) * jnp.inf))
+    return _heapify(data_extended, size)[:size]
+
+
+@jax.jit
+def _heapify(data: Array, size: int) -> Array:
     def for_body(i, heap):
-        i_rev = n // 2 - i - 1
-        heap = _siftup(heap, i_rev)
+        i_rev = size // 2 - i - 1
+        heap = _siftup(heap, i_rev, size)
         return heap
 
-    return jax.lax.fori_loop(0, n // 2, for_body, heap)
+    return jax.lax.fori_loop(0, size // 2, for_body, data)
 
 
 @jax.jit
-def heappush(heap: Array, item: Scalar) -> Array:
-    heap = jnp.hstack((heap, jnp.array(item)))
-    return _siftdown(heap, 0, len(heap) - 1)
+def heappush_fixedsize(data: Array, item: Scalar) -> Array:
+    data = jnp.hstack((data, jnp.array(item)))
+    return _siftdown(data, 0, len(data) - 1)
 
 
 @jax.jit
-def heappop(heap: Array) -> tuple[Scalar, Array]:
-    lastelt = heap[-1]
-    ret = heap[0]
-    heap = heap.at[0].set(lastelt)
-    heap = _siftup(heap, 0)[:-1]
-    return ret, heap
+def heappop_fixedsize(data: Array) -> tuple[Scalar, Array]:
+    lastelt = data[-1]
+    ret = data[0]
+    data = data.at[0].set(lastelt)
+    data = _siftup(data, 0, len(data))[:-1]
+    return ret, data
+
+
+def heappush(data: Array, item: Scalar, max_size: int = 1024) -> Array:
+    size = len(data)
+    assert (
+        size + 1 <= max_size
+    ), "max_size should be greater than or equal to len(data) + 1"
+    data = jnp.hstack((data, jnp.array(item)))
+    data_extended = jnp.hstack((data, jnp.ones(max_size - size) * jnp.inf))
+    return _siftdown(data_extended, 0, size - 1)[: size + 1]
+
+
+def heappop(data: Array, max_size: int = 1024) -> tuple[Scalar, Array]:
+    lastelt = data[-1]
+    ret = data[0]
+    data = data.at[0].set(lastelt)
+    size = len(data)
+    data_extended = jnp.hstack((data, jnp.ones(max_size - size) * jnp.inf))
+    data = _siftup(data_extended, 0, len(data))[: size - 1]
+    return ret, data
